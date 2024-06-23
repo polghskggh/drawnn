@@ -15,7 +15,12 @@ class Specification:
     change_x: float = 15
     change_y: float = 15
     arrow_size: float = 8
+    secondary_size: int = 30
     temp: dict = field(default_factory=lambda: {})
+
+    @staticmethod
+    def copy(other):
+        return Specification(other.height, other.width, other.x, other.y, other.change_y, other.arrow_size)
 
 
 def __type_color(layer_type):
@@ -40,7 +45,7 @@ def __add_to_temp(specification, key, value):
 def __draw_arrow(drawing, specification, arrow_start, arrow_end):
     arrow_height, arrow_width = specification.arrow_size, specification.arrow_size / 2
 
-    if (arrow_start[0] != arrow_end[0]):
+    if arrow_start[0] != arrow_end[0]:
         drawing.add(drawing.line(start=arrow_start, end=(arrow_end[0], arrow_start[1]),
                                  stroke=svgwrite.rgb(0, 0, 0, '%')))
         arrow_start = (arrow_end[0], arrow_start[1])
@@ -53,26 +58,26 @@ def __draw_arrow(drawing, specification, arrow_start, arrow_end):
     return drawing
 
 
-def __group(specification, group: str, align: str = "right"):
+def group(specification, group: str, align: str = "right"):
     x = specification.x if align == "right" else specification.x + specification.width
 
     return __add_to_temp(specification, group, Specification(specification.height, specification.width, x,
                                                              specification.y, temp={"align": align}))
 
 
-def __ungroup(drawing, specification, group: str):
+def ungroup(drawing, specification, group: str, offset: int = 1):
     vals = specification.temp[group]
     for val in vals:
         if val.temp["align"] == "left":
-            targ_x = specification.x
+            targ_x = specification.x - offset * (specification.secondary_size + specification.change_x)
             sign = 1
         else:
             targ_x = specification.x + specification.width
             sign = -1
-
+        targ_x -= sign * (offset - 1) * (specification.secondary_size + specification.change_x)
         targ_x += sign * specification.change_x / 4
-        arrow_start = (
-            val.x + specification.change_x / 4, val.y)
+        arrow_start = val.x + specification.change_x / 4, val.y
+
         arrow_end = (targ_x, specification.y - specification.height)
         __draw_arrow(drawing, specification, arrow_start, arrow_end)
 
@@ -131,12 +136,15 @@ def draw_conv(drawing, specification, scale: str = "same", skip: bool = False):
     return drawing, specification
 
 
-def draw_dense(drawing, specification):
+def draw_dense(drawing, specification, count=1):
     specification.y -= 2 * specification.change_y
+    layer_specs = Specification.copy(specification)
+    for _ in range(count):
+        drawing = __draw_layer(drawing, layer_specs, "dense")
+        layer_specs.x += + layer_specs.width + specification.change_x
+        layer_specs.width = layer_specs.secondary_size
 
-    drawing = __draw_layer(drawing, specification, "dense")
     return drawing, specification
-
 
 def draw_simple():
     drawing = svgwrite.Drawing("simple.svg", profile='Full')
@@ -145,13 +153,14 @@ def draw_simple():
     drawing, specification = draw_dense(drawing, specification)
     for i in range(6):
         drawing, specification = draw_conv(drawing, specification, "down", skip=True)
-    specification = __group(specification, "latent")
+    specification = group(specification, "latent")
     for i in range(2):
         drawing, specification = draw_conv(drawing, specification, "same")
     for i in range(6):
         drawing, specification = draw_conv(drawing, specification, "up", skip=True)
-    __ungroup(drawing, specification,"latent")
-    drawing, specification = draw_dense(drawing, specification)
+    ungroup(drawing, specification,"latent", 2)
+    ungroup(drawing, specification, "latent", 3)
+    drawing, specification = draw_dense(drawing, specification, 3)
 
     drawing.save()
 
